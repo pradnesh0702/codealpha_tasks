@@ -1,0 +1,37 @@
+# 🛡️ Code Security Audit & Architectural Review
+
+While the primary flaw flagged by static application security testing (SAST) tools like Bandit is a critical SQL Injection risk, a manual code review reveals several cascading security gaps and architectural weaknesses within the implementation.
+
+Below is the comprehensive breakdown of the identified vulnerabilities and weaknesses:
+
+---
+
+## 🛑 1. SQL Injection (SQLi) — *Critical Severity*
+
+* **🔍 The Flaw:** The implementation utilizes a Python f-string (`f"SELECT ... '{certificate_id}'"`) to dynamically construct a raw database query string rather than using parameterized inputs.
+* **💥 The Risk:** An attacker can input malicious SQL payloads instead of a valid alphanumeric identifier (e.g., passing `' OR '1'='1`). 
+The database backend will interpret this input as structured code, bypassing the intended business logic and potentially dumping every record stored within the system.
+
+---
+
+## ⚠️ 2. Missing Input Validation & Sanitization — *Medium Severity*
+
+* **🔍 The Flaw:** The `certificate_id` parameters are accepted directly from the user request as raw, untrusted strings (`certificate_id: str`) without passing through structural or type-safety checks.
+* **💥 The Risk:** The application blindly trusts ingress user data. Without validating that the incoming payload strictly conforms to an expected schema (such as a specific alphanumeric length, a standard UUID, or a cryptographic hash regex),
+the endpoint remains entirely exposed to unexpected payloads, buffer overflow attempts, or malicious metacharacters.
+
+---
+
+## 🔔 3. Lack of Error Handling & Information Disclosure — *Low Severity*
+
+* **🔍 The Flaw:** Database lifecycle operations (`sqlite3.connect` and `cursor.execute`) run raw without being wrapped inside a robust `try-except` structure.
+* **💥 The Risk:** If the backend database encounters an exception (e.g., connection timeouts, missing tables, or runtime syntax failures caused by malformed input),
+the runtime environment will throw an unhandled exception stack trace directly back to the client interface. This leaks critical internal infrastructure metadata—including system file paths, library versions, and database schemas—aiding attackers in targeted exploitation.
+
+---
+
+## ⚙️ 4. Suboptimal Resource Management (Connection Pooling) — *Architectural / Reliability Weakness*
+
+* **🔍 The Flaw:** The application initializes a brand new, block-blocking database connection (`sqlite3.connect`) and terminates it manually on *every individual incoming request*.
+* **💥 The Risk:** While not an immediate remote code execution or data leakage exploit, this architectural anti-pattern directly compromises system availability. 
+Under high-concurrency production environments, spinning up and tearing down local file descriptors introduces severe overhead that can easily exhaust server resources, making the application highly susceptible to an accidental Denial of Service (DoS).
